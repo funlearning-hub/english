@@ -7,7 +7,7 @@
     table { margin:auto; border-collapse: collapse; }
     td { width: 100px; height: 80px; border: 1px solid #333; text-align:center; vertical-align:middle; font-size:16px; cursor:pointer; }
     td.marked { background:#4caf50; color:white; }
-    #clue { font-size:20px; margin:20px; color:#ff5722; }
+    #clue { font-size:22px; margin:20px; color:#ff5722; font-weight:bold; }
     button { padding:10px 20px; margin:10px; font-size:16px; }
     input { padding:6px; font-size:16px; }
   </style>
@@ -18,44 +18,46 @@
 <p>Student Name: <input type="text" id="studentName" placeholder="Enter your name"></p>
 <button onclick="startGame()">Start Game</button>
 
-<div id="clue"></div>
+<h3 id="clue"></h3>
+<button id="nextBtn" onclick="nextClue()" style="display:none;">Next Clue</button>
+
 <table id="bingoCard"></table>
 
 <script>
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbzlakvQbU5EnxQkJqrD9H3J4g6xeOt-AiByHwCSZu-BUreOSzHc1qWkFW0jSfxL4RDC/exec"; // Replace with your Apps Script URL
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzlakvQbU5EnxQkJqrD9H3J4g6xeOt-AiByHwCSZu-BUreOSzHc1qWkFW0jSfxL4RDC/exec";
+
 const GRID_SIZE = 5;
 let words = [];
 let clues = [];
 let remainingClues = [];
-let bingoWords = [];
 let currentClue = null;
 let marked = [];
 let studentName = "";
 
-// Load words and clues from Google Sheet
+// Load all words & clues immediately (no delay later)
 async function loadWords(){
   const res = await fetch(SHEET_URL+"?action=fetch");
-  const data = await res.json(); // [{Clue:"",Answer:""}, ...]
-  words = data.map(d=>d.Answer);
-  clues = data.map(d=>({clue:d.Clue, answer:d.Answer}));
+  const data = await res.json();
+  words = data.map(d => d.Answer);
+  clues = data.map(d => ({ clue: d.Clue, answer: d.Answer }));
 }
 
-// Generate Bingo card
+loadWords(); // Load as soon as page opens
+
+// Generate Bingo Card
 function generateBingoCard(){
   const card = document.getElementById("bingoCard");
   card.innerHTML = "";
-  bingoWords = [];
+  let selectedWords = [...words].sort(()=>0.5-Math.random()).slice(0, 25);
+
   marked = Array(GRID_SIZE).fill(0).map(()=>Array(GRID_SIZE).fill(false));
-  let selectedWords = [...words].sort(()=>0.5-Math.random()).slice(0,GRID_SIZE*GRID_SIZE);
-  bingoWords = selectedWords;
-  for(let r=0;r<GRID_SIZE;r++){
+
+  for(let r=0; r<GRID_SIZE; r++){
     const tr = document.createElement("tr");
-    for(let c=0;c<GRID_SIZE;c++){
+    for(let c=0; c<GRID_SIZE; c++){
       const td = document.createElement("td");
-      td.textContent = selectedWords[r*GRID_SIZE+c];
-      td.dataset.row = r;
-      td.dataset.col = c;
-      td.onclick = ()=>markWord(td,r,c);
+      td.textContent = selectedWords[r*GRID_SIZE + c];
+      td.onclick = () => markWord(td, r, c);
       tr.appendChild(td);
     }
     card.appendChild(tr);
@@ -65,69 +67,74 @@ function generateBingoCard(){
 // Start game
 async function startGame(){
   studentName = document.getElementById("studentName").value.trim();
-  if(!studentName){ alert("Please enter your name"); return; }
-  await loadWords();
-  remainingClues = [...clues];
+  if(!studentName){ alert("Enter name first."); return; }
+
   generateBingoCard();
-  nextClue();
+  remainingClues = [...clues];
+
+  document.getElementById("nextBtn").style.display = "inline-block";
+  document.getElementById("clue").textContent = "Click NEXT CLUE to begin";
 }
 
-// Show next clue randomly
+// Show next clue ONLY when teacher clicks
 function nextClue(){
-  if(remainingClues.length===0){
-    document.getElementById("clue").textContent = "All clues called!";
+  if(remainingClues.length === 0){
+    document.getElementById("clue").textContent = "No more clues!";
     currentClue = null;
     return;
   }
-  const index = Math.floor(Math.random()*remainingClues.length);
-  currentClue = remainingClues.splice(index,1)[0];
+
+  const index = Math.floor(Math.random() * remainingClues.length);
+  currentClue = remainingClues.splice(index, 1)[0];
+
   document.getElementById("clue").textContent = currentClue.clue;
 }
 
-// Handle student click
-function markWord(td,row,col){
-  if(!currentClue) return;
+// Handle student clicking a word
+function markWord(td, row, col){
+  if(!currentClue){
+    alert("Teacher must click NEXT CLUE first!");
+    return;
+  }
+
   td.classList.add("marked");
   marked[row][col] = true;
 
-  const selectedWord = td.textContent;
-  const isCorrect = selectedWord === currentClue.answer;
+  const selected = td.textContent;
+  const correct = selected === currentClue.answer;
 
-  // Optionally save to Google Sheet
-  fetch(SHEET_URL,{
-    method:"POST",
+  // Save answer to Google Sheet
+  fetch(SHEET_URL, {
+    method: "POST",
     body: JSON.stringify({
-      action:"save",
-      timestamp:new Date().toISOString(),
+      action: "save",
+      timestamp: new Date().toISOString(),
       student: studentName,
       clue: currentClue.clue,
-      selectedWord: selectedWord,
-      correct: isCorrect
+      selectedWord: selected,
+      correct: correct
     })
-  }).catch(err=>console.error(err));
+  });
 
-  if(isCorrect){
+  if(correct){
     alert("✅ Correct!");
   } else {
-    alert("❌ Wrong! Correct: "+currentClue.answer);
+    alert("❌ Wrong! Correct answer: " + currentClue.answer);
   }
 
-  // check Bingo
-  if(checkBingo(row,col)){
-    alert("🎉 Bingo! Line completed!");
-  }
+  checkBingo(row, col);
 
-  // Next clue automatically
-  nextClue();
+  // Wait for teacher — DO NOT auto show next clue
+  currentClue = null;
+  document.getElementById("clue").textContent = "Click NEXT CLUE";
 }
 
-// Check Bingo (row, column, diagonal)
+// Check Bingo lines
 function checkBingo(r,c){
-  if(marked[r].every(v=>v)) return true;
-  if(marked.every(row=>row[c])) return true;
-  if(r===c && marked.every((row,i)=>row[i])) return true;
-  if(r+c===GRID_SIZE-1 && marked.every((row,i)=>row[GRID_SIZE-1-i])) return true;
-  return false;
+  if(marked[r].every(v => v)) alert("🎉 BINGO! Row completed!");
+  if(marked.every(row => row[c])) alert("🎉 BINGO! Column completed!");
+  if(r === c && marked.every((row, i) => row[i])) alert("🎉 BINGO! Diagonal!");
+  if(r + c === GRID_SIZE - 1 && marked.every((row, i) => row[4 - i])) alert("🎉 BINGO! Diagonal!");
 }
 </script>
 
