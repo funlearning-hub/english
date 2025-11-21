@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>English Bingo Game</title>
+  <style>
+    body { font-family: Arial; text-align: center; padding: 20px; background:#f6f6f6; }
+    table { margin:auto; border-collapse: collapse; }
+    td { width: 100px; height: 80px; border: 1px solid #333; text-align:center; vertical-align:middle; font-size:16px; cursor:pointer; }
+    td.marked { background:#4caf50; color:white; }
+    #clue { font-size:20px; margin:20px; color:#ff5722; }
+    button { padding:10px 20px; margin:10px; font-size:16px; }
+    input { padding:6px; font-size:16px; }
+  </style>
+</head>
+<body>
+
+<h2>English Bingo Game</h2>
+<p>Student Name: <input type="text" id="studentName" placeholder="Enter your name"></p>
+<button onclick="startGame()">Start Game</button>
+
+<div id="clue"></div>
+<table id="bingoCard"></table>
+
+<script>
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzlakvQbU5EnxQkJqrD9H3J4g6xeOt-AiByHwCSZu-BUreOSzHc1qWkFW0jSfxL4RDC/exec"; // Replace with your Apps Script URL
+const GRID_SIZE = 5;
+let words = [];
+let clues = [];
+let remainingClues = [];
+let bingoWords = [];
+let currentClue = null;
+let marked = [];
+let studentName = "";
+
+// Load words and clues from Google Sheet
+async function loadWords(){
+  const res = await fetch(SHEET_URL+"?action=fetch");
+  const data = await res.json(); // [{Clue:"",Answer:""}, ...]
+  words = data.map(d=>d.Answer);
+  clues = data.map(d=>({clue:d.Clue, answer:d.Answer}));
+}
+
+// Generate Bingo card
+function generateBingoCard(){
+  const card = document.getElementById("bingoCard");
+  card.innerHTML = "";
+  bingoWords = [];
+  marked = Array(GRID_SIZE).fill(0).map(()=>Array(GRID_SIZE).fill(false));
+  let selectedWords = [...words].sort(()=>0.5-Math.random()).slice(0,GRID_SIZE*GRID_SIZE);
+  bingoWords = selectedWords;
+  for(let r=0;r<GRID_SIZE;r++){
+    const tr = document.createElement("tr");
+    for(let c=0;c<GRID_SIZE;c++){
+      const td = document.createElement("td");
+      td.textContent = selectedWords[r*GRID_SIZE+c];
+      td.dataset.row = r;
+      td.dataset.col = c;
+      td.onclick = ()=>markWord(td,r,c);
+      tr.appendChild(td);
+    }
+    card.appendChild(tr);
+  }
+}
+
+// Start game
+async function startGame(){
+  studentName = document.getElementById("studentName").value.trim();
+  if(!studentName){ alert("Please enter your name"); return; }
+  await loadWords();
+  remainingClues = [...clues];
+  generateBingoCard();
+  nextClue();
+}
+
+// Show next clue randomly
+function nextClue(){
+  if(remainingClues.length===0){
+    document.getElementById("clue").textContent = "All clues called!";
+    currentClue = null;
+    return;
+  }
+  const index = Math.floor(Math.random()*remainingClues.length);
+  currentClue = remainingClues.splice(index,1)[0];
+  document.getElementById("clue").textContent = currentClue.clue;
+}
+
+// Handle student click
+function markWord(td,row,col){
+  if(!currentClue) return;
+  td.classList.add("marked");
+  marked[row][col] = true;
+
+  const selectedWord = td.textContent;
+  const isCorrect = selectedWord === currentClue.answer;
+
+  // Optionally save to Google Sheet
+  fetch(SHEET_URL,{
+    method:"POST",
+    body: JSON.stringify({
+      action:"save",
+      timestamp:new Date().toISOString(),
+      student: studentName,
+      clue: currentClue.clue,
+      selectedWord: selectedWord,
+      correct: isCorrect
+    })
+  }).catch(err=>console.error(err));
+
+  if(isCorrect){
+    alert("✅ Correct!");
+  } else {
+    alert("❌ Wrong! Correct: "+currentClue.answer);
+  }
+
+  // check Bingo
+  if(checkBingo(row,col)){
+    alert("🎉 Bingo! Line completed!");
+  }
+
+  // Next clue automatically
+  nextClue();
+}
+
+// Check Bingo (row, column, diagonal)
+function checkBingo(r,c){
+  if(marked[r].every(v=>v)) return true;
+  if(marked.every(row=>row[c])) return true;
+  if(r===c && marked.every((row,i)=>row[i])) return true;
+  if(r+c===GRID_SIZE-1 && marked.every((row,i)=>row[GRID_SIZE-1-i])) return true;
+  return false;
+}
+</script>
+
+</body>
+</html>
