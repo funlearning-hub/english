@@ -19,21 +19,20 @@
     input { padding:6px; font-size:16px; }
   </style>
 </head>
-
 <body>
 
 <h2>English Bingo Game</h2>
 <p>Student Name: <input type="text" id="studentName" placeholder="Enter your name"></p>
-<button id="startBtn">Start Game</button>
+<button id="startBtn" disabled>Loading...</button>
 
 <h3 id="clue"></h3>
 
 <table id="bingoCard"></table>
 
 <script>
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbzlakvQbU5EnxQkJqrD9H3J4g6xeOt-AiByHwCSZu-BUreOSzHc1qWkFW0jSfxL4RDC/exec";
-
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzxTUU5koEaf5BU2jg1YqXOdN-j2Roq_lMxPPLpPf4V4JSRqDARwECjhk6ErVZK_KVZ/exec";
 const GRID_SIZE = 5;
+
 let words = [];
 let clues = [];
 let remainingClues = [];
@@ -42,9 +41,7 @@ let marked = [];
 let studentName = "";
 let cardWords = [];
 
-/* ===========================================
-   1. Preload words & clues silently
-   =========================================== */
+// ------------------ 1. Preload clues ------------------
 async function preloadClues() {
   try {
     const res = await fetch(SHEET_URL + "?action=fetch");
@@ -66,35 +63,35 @@ async function preloadClues() {
     }
 
     remainingClues = [...clues];
-    console.log("Preloaded clues:", remainingClues.length);
 
-  } catch (e) {
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("startBtn").textContent = "Start Game";
+    console.log("Clues loaded:", remainingClues.length);
+
+  } catch(e) {
     console.error(e);
     alert("Could not load clues/words. Check your Google Apps Script URL.");
   }
 }
 
-/* ===========================================
-   2. Make non-repeated bingo card
-   =========================================== */
+// ------------------ 2. Generate card words ------------------
 function makeCardWords() {
   const needed = GRID_SIZE * GRID_SIZE;
 
   if (words.length >= needed) {
     cardWords = [...words].sort(() => Math.random() - 0.5).slice(0, needed);
   } else {
+    // Fill with duplicates if needed
     const unique = [...words];
     while (unique.length < needed) {
       const extra = words[Math.floor(Math.random() * words.length)];
-      if (!unique.includes(extra)) unique.push(extra);
+      unique.push(extra);
     }
     cardWords = unique.slice(0, needed);
   }
 }
 
-/* ===========================================
-   3. Generate Bingo Card
-   =========================================== */
+// ------------------ 3. Generate Bingo Card ------------------
 function generateBingoCard() {
   const card = document.getElementById("bingoCard");
   card.innerHTML = "";
@@ -107,8 +104,7 @@ function generateBingoCard() {
     for (let c = 0; c < GRID_SIZE; c++) {
       const td = document.createElement("td");
       const text = cardWords[r * GRID_SIZE + c];
-      td.textContent = text;
-
+      td.textContent = text || " ";
       td.onclick = () => markWord(td, r, c);
       tr.appendChild(td);
     }
@@ -116,10 +112,8 @@ function generateBingoCard() {
   }
 }
 
-/* ===========================================
-   4. Start Game (generates card & shows first clue)
-   =========================================== */
-async function startGame() {
+// ------------------ 4. Start Game ------------------
+function startGame() {
   studentName = document.getElementById("studentName").value.trim();
   if (!studentName) {
     alert("Enter your name first.");
@@ -127,17 +121,15 @@ async function startGame() {
   }
 
   if (words.length === 0) {
-    alert("Still loading words... wait 1 second.");
+    alert("Still loading words... wait a moment.");
     return;
   }
 
   generateBingoCard();
-  showNextClue(); // first clue
+  showNextClue();
 }
 
-/* ===========================================
-   5. Show next clue
-   =========================================== */
+// ------------------ 5. Show next clue ------------------
 function showNextClue() {
   if (remainingClues.length === 0) {
     document.getElementById("clue").textContent = "No more clues!";
@@ -150,9 +142,7 @@ function showNextClue() {
   document.getElementById("clue").textContent = currentClue.clue;
 }
 
-/* ===========================================
-   6. Handle word click
-   =========================================== */
+// ------------------ 6. Mark word ------------------
 function markWord(td, r, c) {
   if (!currentClue) {
     alert("Clue not ready.");
@@ -181,9 +171,7 @@ function markWord(td, r, c) {
   showNextClue();
 }
 
-/* ===========================================
-   7. Save response to Google Sheets
-   =========================================== */
+// ------------------ 7. Save response ------------------
 function saveResponse(obj) {
   fetch(SHEET_URL, {
     method:"POST",
@@ -192,9 +180,7 @@ function saveResponse(obj) {
   });
 }
 
-/* ===========================================
-   8. Check Bingo
-   =========================================== */
+// ------------------ 8. Check Bingo ------------------
 function checkBingo(r,c){
   if(marked[r].every(v => v)) alert("🎉 BINGO! Row!");
   if(marked.every(row => row[c])) alert("🎉 BINGO! Column!");
@@ -202,15 +188,12 @@ function checkBingo(r,c){
   if(r+c===GRID_SIZE-1 && marked.every((row,i)=>row[GRID_SIZE-1-i])) alert("🎉 BINGO! Diagonal!");
 }
 
-/* ===========================================
-   INIT
-   =========================================== */
+// ------------------ Init ------------------
 document.getElementById("startBtn").addEventListener("click", startGame);
 
-// Preload words/clues silently
+// Start preloading clues
 preloadClues();
 
 </script>
 </body>
 </html>
-
