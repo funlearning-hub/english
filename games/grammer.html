@@ -35,8 +35,6 @@
       padding: 12px;
       font-size: 18px;
     }
-    .correct { background: #4caf50 !important; }
-    .wrong { background: #d9534f !important; }
     #reward { font-size: 18px; color: #ff9800; font-weight: bold; min-height: 24px; }
     #streakBarContainer {
       width: 100%;
@@ -65,21 +63,9 @@
       font-weight: bold;
       font-size: 14px;
     }
-    .powerup.disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-      font-size: 14px;
-    }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 6px;
-      text-align: center;
-    }
+    .powerup.disabled { opacity: 0.5; cursor: default; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     th { background: #f0f0f0; }
     #historyEmpty { font-size: 14px; color: #777; }
   </style>
@@ -98,9 +84,7 @@
     <p id="historyEmpty">No attempts yet. Play a round to see scores here.</p>
     <table id="historyTable" style="display:none;">
       <thead>
-        <tr>
-          <th>#</th><th>Name</th><th>Score</th><th>Time</th>
-        </tr>
+        <tr><th>#</th><th>Name</th><th>Score</th><th>Time</th></tr>
       </thead>
       <tbody id="historyBody"></tbody>
     </table>
@@ -134,7 +118,6 @@
 </div>
 
 <script>
-// ===== GLOBAL STATE =====
 let score = 0;
 let streak = 0;
 let timeLeft = 300;
@@ -144,47 +127,49 @@ let freezeTime = false;
 let currentPlayer = "";
 let currentCorrect = "";
 let questionsFromSheet = [];
+let remainingQuestions = [];
 let powerupsShown = false;
 
 const STORAGE_KEY = "english_game_attempts";
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbwOI6-NmdeH37pqNpFZm1fnXjBfCVuvp4GHb4bii5MLRj18pzghAvQ1X99OK9VCTWUM/exec"; // replace with your Apps Script URL
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbwOI6-NmdeH37pqNpFZm1fnXjBfCVuvp4GHb4bii5MLRj18pzghAvQ1X99OK9VCTWUM/exec"; // Replace with your Apps Script URL
 
-// sounds
 const correctSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
 const wrongSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 const powerupSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 
-// ===== UTILS =====
-function r(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function r(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-// ===== FETCH QUESTIONS =====
-async function loadQuestions() {
-  try {
+// ===== LOAD QUESTIONS BEFORE GAME START =====
+async function loadQuestions(){
+  try{
     const res = await fetch(SHEET_URL);
     questionsFromSheet = await res.json();
     console.log("Questions loaded:", questionsFromSheet.length);
-  } catch(err) {
+  } catch(err){
     console.error("Error loading questions:", err);
   }
 }
 
 // ===== NEW QUESTION =====
-function newQuestion() {
-  if(!questionsFromSheet.length) return;
-  const q = questionsFromSheet[r(0, questionsFromSheet.length-1)];
+function newQuestion(){
+  if(!remainingQuestions.length){
+    endRound(); // end game if no questions left
+    return;
+  }
+
+  const index = r(0, remainingQuestions.length-1);
+  const q = remainingQuestions.splice(index,1)[0]; // remove from remainingQuestions
   currentCorrect = q.correct;
   document.getElementById("expression").textContent = q.question;
 
   const div = document.getElementById("answers");
   div.innerHTML = "";
-
-  // Shuffle options
-  const options = q.options.sort(() => Math.random() - 0.5);
-  options.forEach(opt => {
+  const options = q.options.sort(()=>Math.random()-0.5);
+  options.forEach(opt=>{
     const btn = document.createElement("button");
     btn.className = "btn answer-btn";
     btn.textContent = opt;
-    btn.onclick = () => checkAnswer(btn, opt, currentCorrect, q.question);
+    btn.onclick = () => checkAnswer(btn,opt,currentCorrect,q.question);
     div.appendChild(btn);
   });
 
@@ -192,14 +177,9 @@ function newQuestion() {
   document.getElementById("reward").textContent = "";
 }
 
-// ===== STREAK BAR =====
-function updateStreakBar() {
-  document.getElementById("streakBar").style.width = Math.min(streak*10,100)+"%";
-}
-
 // ===== CHECK ANSWER =====
 function checkAnswer(btn, choice, correct, question){
-  if(choice === correct){
+  if(choice===correct){
     correctSound.play();
     score += doublePoints ? 2 : 1;
     streak++;
@@ -207,21 +187,19 @@ function checkAnswer(btn, choice, correct, question){
     handleStreakRewards();
   } else {
     wrongSound.play();
-    streak = 0;
-    document.getElementById("feedback").textContent = "Wrong. Correct: " + correct;
+    streak=0;
+    document.getElementById("feedback").textContent = "Wrong. Correct: "+correct;
   }
   document.getElementById("score").textContent = score;
   document.getElementById("streak").textContent = streak;
   updateStreakBar();
 
-  // Save attempt
-  saveAttempt(currentPlayer, question, choice, correct, 300 - timeLeft);
-
-  setTimeout(newQuestion, 500);
+  saveAttempt(currentPlayer, question, choice, correct, 300-timeLeft);
+  setTimeout(newQuestion,500);
 }
 
 // ===== STREAK REWARDS =====
-function handleStreakRewards() {
+function handleStreakRewards(){
   let msg="";
   if(streak===3) msg="🔥 Nice streak!";
   if(streak===5) msg="⚡ Combo Master!";
@@ -229,23 +207,24 @@ function handleStreakRewards() {
   if(msg) document.getElementById("reward").textContent = msg;
 }
 
+// ===== STREAK BAR =====
+function updateStreakBar(){
+  document.getElementById("streakBar").style.width = Math.min(streak*10,100)+"%";
+}
+
 // ===== TIMER & POWERUPS =====
 function startTimer(){
   clearInterval(timerInterval);
   timeLeft = 300;
   document.getElementById("timer").textContent = timeLeft;
-  powerupsShown = false;
+  powerupsShown=false;
   document.getElementById("powerups").innerHTML = "";
 
-  timerInterval = setInterval(()=>{
+  timerInterval=setInterval(()=>{
     if(!freezeTime) timeLeft--;
     document.getElementById("timer").textContent = timeLeft;
-
-    if(timeLeft === 30 && !powerupsShown){
-      powerupsShown = true;
-      showPowerUps();
-    }
-    if(timeLeft <= 0) endRound();
+    if(timeLeft===30 && !powerupsShown){ powerupsShown=true; showPowerUps(); }
+    if(timeLeft<=0) endRound();
   },1000);
 }
 
@@ -258,56 +237,33 @@ function showPowerUps(){
   `;
 }
 
-function disablePowerup(id){
-  const el=document.getElementById(id);
-  if(el){ el.classList.add("disabled"); el.onclick=null; }
-}
-
-function activateFreeze(){
-  if(freezeTime) return;
-  freezeTime=true;
-  powerupSound.play();
-  document.getElementById("reward").textContent="❄ Time Frozen for 7s!";
-  disablePowerup("puFreeze");
-  setTimeout(()=>{ freezeTime=false; },7000);
-}
-
-function activateDouble(){
-  if(doublePoints) return;
-  doublePoints=true;
-  powerupSound.play();
-  document.getElementById("reward").textContent="✨ Double Points for 10s!";
-  disablePowerup("puDouble");
-  setTimeout(()=>{ doublePoints=false; },10000);
-}
-
-function activateHint(){
-  powerupSound.play();
-  document.getElementById("reward").textContent="💡 Answer: "+currentCorrect;
-  disablePowerup("puHint");
-}
+function disablePowerup(id){ const el=document.getElementById(id); if(el){ el.classList.add("disabled"); el.onclick=null; } }
+function activateFreeze(){ if(freezeTime) return; freezeTime=true; powerupSound.play(); document.getElementById("reward").textContent="❄ Time Frozen for 7s!"; disablePowerup("puFreeze"); setTimeout(()=>{freezeTime=false;},7000);}
+function activateDouble(){ if(doublePoints) return; doublePoints=true; powerupSound.play(); document.getElementById("reward").textContent="✨ Double Points for 10s!"; disablePowerup("puDouble"); setTimeout(()=>{doublePoints=false;},10000);}
+function activateHint(){ powerupSound.play(); document.getElementById("reward").textContent="💡 Answer: "+currentCorrect; disablePowerup("puHint");}
 
 // ===== START / END / HISTORY =====
-async function startGame(){
+function startGame(){
   const nameInput=document.getElementById("playerName");
   const name=nameInput.value.trim();
   if(!name){ alert("Please enter a name first."); return; }
   currentPlayer=name;
   score=0; streak=0; freezeTime=false; doublePoints=false;
 
-  document.getElementById("score").textContent=score;
-  document.getElementById("streak").textContent=streak;
-  document.getElementById("streakBar").style.width="0%";
-  document.getElementById("reward").textContent="";
-  document.getElementById("feedback").textContent="";
-  document.getElementById("powerups").innerHTML="";
-  document.getElementById("currentPlayerLabel").textContent=currentPlayer;
+  remainingQuestions = [...questionsFromSheet]; // initialize for this round
+
+  document.getElementById("score").textContent = score;
+  document.getElementById("streak").textContent = streak;
+  document.getElementById("streakBar").style.width = "0%";
+  document.getElementById("reward").textContent = "";
+  document.getElementById("feedback").textContent = "";
+  document.getElementById("powerups").innerHTML = "";
+  document.getElementById("currentPlayerLabel").textContent = currentPlayer;
 
   document.getElementById("startScreen").style.display="none";
   document.getElementById("endScreen").style.display="none";
   document.getElementById("gameContainer").style.display="block";
 
-  await loadQuestions();
   startTimer();
   newQuestion();
 }
@@ -322,15 +278,15 @@ function saveAttempt(name, question, chosenAnswer, correctAnswer, timeTaken){
     body: JSON.stringify({name, question, chosenAnswer, correctAnswer, timeTaken, timestamp: new Date().toISOString()})
   }).catch(err=>console.error("Save error:",err));
 
-  let raw = localStorage.getItem(STORAGE_KEY);
+  let raw=localStorage.getItem(STORAGE_KEY);
   let arr = raw ? JSON.parse(raw) : [];
-  arr.push({name, score, time: new Date().toLocaleString()});
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  arr.push({name, score, time:new Date().toLocaleString()});
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(arr));
 }
 
 // ===== LOAD HISTORY =====
 function loadHistory(){
-  let raw = localStorage.getItem(STORAGE_KEY);
+  let raw=localStorage.getItem(STORAGE_KEY);
   let arr = raw ? JSON.parse(raw) : [];
   const table=document.getElementById("historyTable");
   const body=document.getElementById("historyBody");
@@ -355,7 +311,10 @@ function endRound(){
 }
 
 // ===== INIT =====
-window.onload=function(){ loadHistory(); };
+window.onload = async function(){
+  await loadQuestions(); // load questions BEFORE game starts
+  loadHistory();
+};
 </script>
 
 </body>
