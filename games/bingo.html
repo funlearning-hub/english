@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>English Bingo Game</title>
+  <title>English Bingo Game (Fixed)</title>
+  <meta charset="utf-8">
   <style>
     body { font-family: Arial; text-align: center; padding: 20px; background:#f6f6f6; }
     table { margin:auto; border-collapse: collapse; }
-    td { width: 100px; height: 80px; border: 1px solid #333; text-align:center; vertical-align:middle; font-size:16px; cursor:pointer; }
-    td.marked { background:#4caf50; color:white; }
+    td { width: 100px; height: 80px; border: 1px solid #333; text-align:center; vertical-align:middle; font-size:16px; cursor:pointer; user-select:none; }
+    td.marked { background:#4caf50; color:white; cursor:default; }
+    td.wrong { background:#f44336; color:white; }
     #clue { font-size:22px; margin:20px; color:#ff5722; font-weight:bold; }
     button { padding:10px 20px; margin:10px; font-size:16px; }
     input { padding:6px; font-size:16px; }
@@ -14,12 +16,12 @@
 </head>
 <body>
 
-<h2>English Bingo Game</h2>
+<h2>English Bingo Game (Fixed)</h2>
 <p>Student Name: <input type="text" id="studentName" placeholder="Enter your name"></p>
-<button onclick="startGame()">Start Game</button>
+<button id="startBtn">Start Game</button>
 
 <h3 id="clue"></h3>
-<button id="nextBtn" onclick="nextClue()" style="display:none;">Next Clue</button>
+<button id="nextBtn" style="display:none;">Next Clue</button>
 
 <table id="bingoCard"></table>
 
@@ -33,22 +35,54 @@ let remainingClues = [];
 let currentClue = null;
 let marked = [];
 let studentName = "";
+let cardWords = [];
 
 // Load all words & clues immediately (no delay later)
 async function loadWords(){
-  const res = await fetch(SHEET_URL+"?action=fetch");
-  const data = await res.json();
-  words = data.map(d => d.Answer);
-  clues = data.map(d => ({ clue: d.Clue, answer: d.Answer }));
+  try{
+    const res = await fetch(SHEET_URL+"?action=fetch");
+    if(!res.ok) throw new Error('Failed to load words');
+    const data = await res.json();
+    // Protect against duplicate clues/answers coming from sheet
+    const seenAnswers = new Set();
+    words = [];
+    clues = [];
+    for(const d of data){
+      const answer = (d.Answer || '').toString().trim();
+      const clue = (d.Clue || '').toString().trim();
+      if(!answer) continue;
+      if(seenAnswers.has(answer)) continue; // skip duplicates
+      seenAnswers.add(answer);
+      words.push(answer);
+      clues.push({ clue, answer });
+    }
+  }catch(err){
+    console.error(err);
+    alert('Could not load words. Check network or sheet URL.');
+  }
 }
 
-loadWords(); // Load as soon as page opens
+// generate 25 words for the card (no duplicates if enough words)
+function makeCardWords(){
+  if(words.length >= GRID_SIZE * GRID_SIZE){
+    cardWords = [...words].sort(()=>0.5-Math.random()).slice(0, GRID_SIZE*GRID_SIZE);
+  } else {
+    // Not enough words: allow repeats but try to distribute
+    cardWords = [];
+    while(cardWords.length < GRID_SIZE*GRID_SIZE){
+      const next = words[Math.floor(Math.random()*words.length)];
+      if(!next) break;
+      cardWords.push(next);
+    }
+  }
+}
 
 // Generate Bingo Card
 function generateBingoCard(){
   const card = document.getElementById("bingoCard");
   card.innerHTML = "";
-  let selectedWords = [...words].sort(()=>0.5-Math.random()).slice(0, 25);
+
+  makeCardWords();
 
   marked = Array(GRID_SIZE).fill(0).map(()=>Array(GRID_SIZE).fill(false));
 
@@ -56,8 +90,11 @@ function generateBingoCard(){
     const tr = document.createElement("tr");
     for(let c=0; c<GRID_SIZE; c++){
       const td = document.createElement("td");
-      td.textContent = selectedWords[r*GRID_SIZE + c];
+      const text = cardWords[r*GRID_SIZE + c] || '';
+      td.textContent = text;
       td.onclick = () => markWord(td, r, c);
+      td.dataset.row = r;
+      td.dataset.col = c;
       tr.appendChild(td);
     }
     card.appendChild(tr);
@@ -68,6 +105,14 @@ function generateBingoCard(){
 async function startGame(){
   studentName = document.getElementById("studentName").value.trim();
   if(!studentName){ alert("Enter name first."); return; }
+
+  // Wait for words to be loaded so the card shows immediately with data
+  await loadWords();
+
+  if(words.length === 0){
+    alert('No words available from sheet.');
+    return;
+  }
 
   generateBingoCard();
   remainingClues = [...clues];
@@ -93,49 +138,93 @@ function nextClue(){
 // Handle student clicking a word
 function markWord(td, row, col){
   if(!currentClue){
-    alert("Teacher must click NEXT CLUE first!");
+    alert("Please click NEXT CLUE first!");
     return;
   }
-
-  td.classList.add("marked");
-  marked[row][col] = true;
 
   const selected = td.textContent;
   const correct = selected === currentClue.answer;
 
-  // Save answer to Google Sheet
-  fetch(SHEET_URL, {
-    method: "POST",
-    body: JSON.stringify({
-      action: "save",
+  if(correct){
+    // mark permanently
+    td.classList.remove('wrong');
+    td.classList.add('marked');
+    td.onclick = null; // disable further clicks
+    marked[row][col] = true;
+
+    // Save answer to Google Sheet
+    saveResponse({
       timestamp: new Date().toISOString(),
       student: studentName,
       clue: currentClue.clue,
       selectedWord: selected,
-      correct: correct
-    })
-  });
+      correct: true
+    });
 
-  if(correct){
     alert("✅ Correct!");
+
+    checkBingo(row, col);
   } else {
+    // show temporary wrong feedback but DO NOT mark the cell
+    td.classList.add('wrong');
+    setTimeout(()=> td.classList.remove('wrong'), 800);
+
+    saveResponse({
+      timestamp: new Date().toISOString(),
+      student: studentName,
+      clue: currentClue.clue,
+      selectedWord: selected,
+      correct: false
+    });
+
     alert("❌ Wrong! Correct answer: " + currentClue.answer);
   }
 
-  checkBingo(row, col);
-
-  // Wait for teacher — DO NOT auto show next clue
+  // Clear current clue; teacher must press next
   currentClue = null;
   document.getElementById("clue").textContent = "Click NEXT CLUE";
 }
 
+// Save via POST (include headers)
+function saveResponse(payload){
+  fetch(SHEET_URL, {
+    method: "POST",
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action: 'save' }, payload))
+  }).catch(err=>console.warn('Save failed', err));
+}
+
 // Check Bingo lines
 function checkBingo(r,c){
-  if(marked[r].every(v => v)) alert("🎉 BINGO! Row completed!");
-  if(marked.every(row => row[c])) alert("🎉 BINGO! Column completed!");
-  if(r === c && marked.every((row, i) => row[i])) alert("🎉 BINGO! Diagonal!");
-  if(r + c === GRID_SIZE - 1 && marked.every((row, i) => row[4 - i])) alert("🎉 BINGO! Diagonal!");
+  // row
+  if(marked[r].every(v => v)){
+    alert("🎉 BINGO! Row completed!");
+    return;
+  }
+  // column
+  if(marked.every(row => row[c])){
+    alert("🎉 BINGO! Column completed!");
+    return;
+  }
+  // main diagonal
+  if(r === c && marked.every((row, i) => row[i])){
+    alert("🎉 BINGO! Diagonal!");
+    return;
+  }
+  // anti diagonal
+  if(r + c === GRID_SIZE - 1 && marked.every((row, i) => row[GRID_SIZE - 1 - i])){
+    alert("🎉 BINGO! Diagonal!");
+    return;
+  }
 }
+
+// Wire up buttons
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('nextBtn').addEventListener('click', nextClue);
+
+// Preload words on page open (best-effort) so cards load instantly when teacher clicks Start
+loadWords();
+
 </script>
 
 </body>
