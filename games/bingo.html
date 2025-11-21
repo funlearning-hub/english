@@ -42,11 +42,11 @@ let marked = [];
 let studentName = "";
 let cardWords = [];
 
-/* ============================================================
-   1. PRELOAD WORDS & CLUES IMMEDIATELY (but don't show clue)
-   ============================================================ */
-async function preloadClues(){
-  try{
+/* ===========================================
+   1. Preload words & clues silently
+   =========================================== */
+async function preloadClues() {
+  try {
     const res = await fetch(SHEET_URL + "?action=fetch");
     const data = await res.json();
 
@@ -54,12 +54,11 @@ async function preloadClues(){
     words = [];
     clues = [];
 
-    // prevent duplicates here
-    for(const d of data){
+    for (const d of data) {
       const ans = (d.Answer || "").trim();
       const clueText = (d.Clue || "").trim();
-      if(!ans) continue;
-      if(seen.has(ans)) continue;
+      if (!ans) continue;
+      if (seen.has(ans)) continue;
       seen.add(ans);
 
       words.push(ans);
@@ -69,57 +68,43 @@ async function preloadClues(){
     remainingClues = [...clues];
     console.log("Preloaded clues:", remainingClues.length);
 
-  } catch(e){
+  } catch (e) {
     console.error(e);
-    alert("Could not load clues/words.");
+    alert("Could not load clues/words. Check your Google Apps Script URL.");
   }
 }
 
-/* ============================================
-   2. SHOW RANDOM CLUE WHEN GAME STARTS
-   ============================================ */
-function showNextClue(){
-  if(remainingClues.length === 0){
-    document.getElementById("clue").textContent = "No more clues!";
-    return;
-  }
-
-  const i = Math.floor(Math.random() * remainingClues.length);
-  currentClue = remainingClues.splice(i, 1)[0];
-
-  document.getElementById("clue").textContent = currentClue.clue;
-}
-
-/* ============================================
-   3. MAKE NON-REPEATED BINGO CARD
-   ============================================ */
-function makeCardWords(){
+/* ===========================================
+   2. Make non-repeated bingo card
+   =========================================== */
+function makeCardWords() {
   const needed = GRID_SIZE * GRID_SIZE;
 
-  if(words.length >= needed){
-    // shuffle and take first 25 unique words
+  if (words.length >= needed) {
     cardWords = [...words].sort(() => Math.random() - 0.5).slice(0, needed);
   } else {
-    // fallback: still no duplicates
     const unique = [...words];
-    while(unique.length < needed){
+    while (unique.length < needed) {
       const extra = words[Math.floor(Math.random() * words.length)];
-      if(!unique.includes(extra)) unique.push(extra);
+      if (!unique.includes(extra)) unique.push(extra);
     }
     cardWords = unique.slice(0, needed);
   }
 }
 
-function generateBingoCard(){
+/* ===========================================
+   3. Generate Bingo Card
+   =========================================== */
+function generateBingoCard() {
   const card = document.getElementById("bingoCard");
   card.innerHTML = "";
   makeCardWords();
-  marked = Array(GRID_SIZE).fill(0).map(()=>Array(GRID_SIZE).fill(false));
+  marked = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(false));
 
-  for(let r=0; r<GRID_SIZE; r++){
+  for (let r = 0; r < GRID_SIZE; r++) {
     const tr = document.createElement("tr");
 
-    for(let c=0; c<GRID_SIZE; c++){
+    for (let c = 0; c < GRID_SIZE; c++) {
       const td = document.createElement("td");
       const text = cardWords[r * GRID_SIZE + c];
       td.textContent = text;
@@ -131,30 +116,45 @@ function generateBingoCard(){
   }
 }
 
-/* ============================================
-   4. START GAME (shows first clue)
-   ============================================ */
-async function startGame(){
+/* ===========================================
+   4. Start Game (generates card & shows first clue)
+   =========================================== */
+async function startGame() {
   studentName = document.getElementById("studentName").value.trim();
-  if(!studentName){
-    alert("Enter name first.");
+  if (!studentName) {
+    alert("Enter your name first.");
     return;
   }
 
-  if(words.length === 0){
+  if (words.length === 0) {
     alert("Still loading words... wait 1 second.");
     return;
   }
 
   generateBingoCard();
-  showNextClue();   // 🔥 clue appears now (instantly)
+  showNextClue(); // first clue
 }
 
-/* ============================================
-   5. MARK WORD & SAVE RESULT
-   ============================================ */
-function markWord(td, r, c){
-  if(!currentClue){
+/* ===========================================
+   5. Show next clue
+   =========================================== */
+function showNextClue() {
+  if (remainingClues.length === 0) {
+    document.getElementById("clue").textContent = "No more clues!";
+    currentClue = null;
+    return;
+  }
+
+  const i = Math.floor(Math.random() * remainingClues.length);
+  currentClue = remainingClues.splice(i, 1)[0];
+  document.getElementById("clue").textContent = currentClue.clue;
+}
+
+/* ===========================================
+   6. Handle word click
+   =========================================== */
+function markWord(td, r, c) {
+  if (!currentClue) {
     alert("Clue not ready.");
     return;
   }
@@ -162,74 +162,55 @@ function markWord(td, r, c){
   const selected = td.textContent;
   const correct = (selected === currentClue.answer);
 
-  // correct
-  if(correct){
+  if (correct) {
     td.classList.add("marked");
     td.onclick = null;
     marked[r][c] = true;
 
-    saveResponse({
-      student: studentName,
-      clue: currentClue.clue,
-      selectedWord: selected,
-      correct: true
-    });
-
-    alert("Correct!");
+    saveResponse({student: studentName, clue: currentClue.clue, selectedWord: selected, correct:true});
+    alert("✅ Correct!");
     checkBingo(r, c);
-
-  // wrong
   } else {
     td.classList.add("wrong");
     setTimeout(() => td.classList.remove("wrong"), 800);
 
-    saveResponse({
-      student: studentName,
-      clue: currentClue.clue,
-      selectedWord: selected,
-      correct: false
-    });
-
-    alert("Wrong! Correct answer: " + currentClue.answer);
+    saveResponse({student: studentName, clue: currentClue.clue, selectedWord: selected, correct:false});
+    alert("❌ Wrong! Correct answer: " + currentClue.answer);
   }
 
-  showNextClue();  // next clue automatically
+  showNextClue();
 }
 
-/* ============================================
-   6. SAVE SCORE TO GOOGLE SHEETS
-   ============================================ */
-function saveResponse(obj){
+/* ===========================================
+   7. Save response to Google Sheets
+   =========================================== */
+function saveResponse(obj) {
   fetch(SHEET_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "save",
-      timestamp: new Date().toISOString(),
-      ...obj
-    })
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({...obj, timestamp: new Date().toISOString()})
   });
 }
 
-/* ============================================
-   7. BINGO CHECKER
-   ============================================ */
-function checkBingo(r, c){
-  if(marked[r].every(v => v)) alert("BINGO! Row!");
-  if(marked.every(row => row[c])) alert("BINGO! Column!");
-  if(r === c && marked.every((row,i)=>row[i])) alert("BINGO! Diagonal!");
-  if(r + c === GRID_SIZE - 1 && marked.every((row,i)=>row[GRID_SIZE - 1 - i])) alert("BINGO! Diagonal!");
+/* ===========================================
+   8. Check Bingo
+   =========================================== */
+function checkBingo(r,c){
+  if(marked[r].every(v => v)) alert("🎉 BINGO! Row!");
+  if(marked.every(row => row[c])) alert("🎉 BINGO! Column!");
+  if(r===c && marked.every((row,i)=>row[i])) alert("🎉 BINGO! Diagonal!");
+  if(r+c===GRID_SIZE-1 && marked.every((row,i)=>row[GRID_SIZE-1-i])) alert("🎉 BINGO! Diagonal!");
 }
 
-/* ============================================================
+/* ===========================================
    INIT
-   ============================================================ */
+   =========================================== */
 document.getElementById("startBtn").addEventListener("click", startGame);
 
 // Preload words/clues silently
 preloadClues();
 
 </script>
-
 </body>
 </html>
+
