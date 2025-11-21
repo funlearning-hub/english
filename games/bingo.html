@@ -6,7 +6,12 @@
   <style>
     body { font-family: Arial; text-align: center; padding: 20px; background:#f6f6f6; }
     table { margin:auto; border-collapse: collapse; }
-    td { width: 100px; height: 80px; border: 1px solid #333; text-align:center; vertical-align:middle; font-size:16px; cursor:pointer; user-select:none; }
+    td { 
+      width: 100px; height: 80px; 
+      border: 1px solid #333; 
+      text-align:center; vertical-align:middle; 
+      font-size:16px; cursor:pointer; user-select:none; 
+    }
     td.marked { background:#4caf50; color:white; cursor:default; }
     td.wrong { background:#f44336; color:white; }
     #clue { font-size:22px; margin:20px; color:#ff5722; font-weight:bold; }
@@ -14,6 +19,7 @@
     input { padding:6px; font-size:16px; }
   </style>
 </head>
+
 <body>
 
 <h2>English Bingo Game</h2>
@@ -25,7 +31,7 @@
 <table id="bingoCard"></table>
 
 <script>
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbzlakvQbU5EnxQkJqrD9H3J4g6xeOt-AiByHwCSZu-BUreOSzHc1qWkFW0jSfxL4RDC/exec";
+const SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
 
 const GRID_SIZE = 5;
 let words = [];
@@ -36,19 +42,22 @@ let marked = [];
 let studentName = "";
 let cardWords = [];
 
-// Load all words & clues immediately and show first clue
+/* ============================================================
+   1. PRELOAD WORDS & CLUES IMMEDIATELY (but don't show clue)
+   ============================================================ */
 async function preloadClues(){
   try{
-    const res = await fetch(SHEET_URL+"?action=fetch");
+    const res = await fetch(SHEET_URL + "?action=fetch");
     const data = await res.json();
 
     const seen = new Set();
     words = [];
     clues = [];
 
+    // prevent duplicates here
     for(const d of data){
-      const ans = (d.Answer||"").trim();
-      const clueText = (d.Clue||"").trim();
+      const ans = (d.Answer || "").trim();
+      const clueText = (d.Clue || "").trim();
       if(!ans) continue;
       if(seen.has(ans)) continue;
       seen.add(ans);
@@ -58,33 +67,46 @@ async function preloadClues(){
     }
 
     remainingClues = [...clues];
-    showNextClue();  // 🔥 show clue immediately
+    console.log("Preloaded clues:", remainingClues.length);
 
-  }catch(e){
+  } catch(e){
     console.error(e);
     alert("Could not load clues/words.");
   }
 }
 
-// Automatically show a random clue
+/* ============================================
+   2. SHOW RANDOM CLUE WHEN GAME STARTS
+   ============================================ */
 function showNextClue(){
   if(remainingClues.length === 0){
     document.getElementById("clue").textContent = "No more clues!";
     return;
   }
+
   const i = Math.floor(Math.random() * remainingClues.length);
   currentClue = remainingClues.splice(i, 1)[0];
+
   document.getElementById("clue").textContent = currentClue.clue;
 }
 
+/* ============================================
+   3. MAKE NON-REPEATED BINGO CARD
+   ============================================ */
 function makeCardWords(){
-  if(words.length >= GRID_SIZE * GRID_SIZE){
-    cardWords = [...words].sort(()=>0.5-Math.random()).slice(0, GRID_SIZE*GRID_SIZE);
+  const needed = GRID_SIZE * GRID_SIZE;
+
+  if(words.length >= needed){
+    // shuffle and take first 25 unique words
+    cardWords = [...words].sort(() => Math.random() - 0.5).slice(0, needed);
   } else {
-    cardWords = [];
-    while(cardWords.length < GRID_SIZE*GRID_SIZE){
-      cardWords.push(words[Math.floor(Math.random()*words.length)]);
+    // fallback: still no duplicates
+    const unique = [...words];
+    while(unique.length < needed){
+      const extra = words[Math.floor(Math.random() * words.length)];
+      if(!unique.includes(extra)) unique.push(extra);
     }
+    cardWords = unique.slice(0, needed);
   }
 }
 
@@ -96,10 +118,12 @@ function generateBingoCard(){
 
   for(let r=0; r<GRID_SIZE; r++){
     const tr = document.createElement("tr");
+
     for(let c=0; c<GRID_SIZE; c++){
       const td = document.createElement("td");
-      const text = cardWords[r*GRID_SIZE+c] || '';
+      const text = cardWords[r * GRID_SIZE + c];
       td.textContent = text;
+
       td.onclick = () => markWord(td, r, c);
       tr.appendChild(td);
     }
@@ -107,19 +131,28 @@ function generateBingoCard(){
   }
 }
 
-// Start game only builds the card
+/* ============================================
+   4. START GAME (shows first clue)
+   ============================================ */
 async function startGame(){
   studentName = document.getElementById("studentName").value.trim();
-  if(!studentName){ alert("Enter name first."); return; }
+  if(!studentName){
+    alert("Enter name first.");
+    return;
+  }
 
   if(words.length === 0){
-    alert("Words not loaded yet. Wait 1–2 seconds.");
+    alert("Still loading words... wait 1 second.");
     return;
   }
 
   generateBingoCard();
+  showNextClue();   // 🔥 clue appears now (instantly)
 }
 
+/* ============================================
+   5. MARK WORD & SAVE RESULT
+   ============================================ */
 function markWord(td, r, c){
   if(!currentClue){
     alert("Clue not ready.");
@@ -129,45 +162,73 @@ function markWord(td, r, c){
   const selected = td.textContent;
   const correct = (selected === currentClue.answer);
 
+  // correct
   if(correct){
     td.classList.add("marked");
     td.onclick = null;
     marked[r][c] = true;
 
-    saveResponse({student:studentName, clue:currentClue.clue, selectedWord:selected, correct:true});
+    saveResponse({
+      student: studentName,
+      clue: currentClue.clue,
+      selectedWord: selected,
+      correct: true
+    });
+
     alert("Correct!");
-    checkBingo(r,c);
+    checkBingo(r, c);
+
+  // wrong
   } else {
     td.classList.add("wrong");
-    setTimeout(()=>td.classList.remove("wrong"),800);
+    setTimeout(() => td.classList.remove("wrong"), 800);
 
-    saveResponse({student:studentName, clue:currentClue.clue, selectedWord:selected, correct:false});
+    saveResponse({
+      student: studentName,
+      clue: currentClue.clue,
+      selectedWord: selected,
+      correct: false
+    });
+
     alert("Wrong! Correct answer: " + currentClue.answer);
   }
 
-  showNextClue(); // 🔥 automatically load next clue
+  showNextClue();  // next clue automatically
 }
 
-// Save result
+/* ============================================
+   6. SAVE SCORE TO GOOGLE SHEETS
+   ============================================ */
 function saveResponse(obj){
   fetch(SHEET_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ action:"save", timestamp:new Date().toISOString(), ...obj })
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "save",
+      timestamp: new Date().toISOString(),
+      ...obj
+    })
   });
 }
 
-function checkBingo(r,c){
-  if(marked[r].every(v=>v)) alert("BINGO! Row!");
-  if(marked.every(row=>row[c])) alert("BINGO! Column!");
-  if(r===c && marked.every((row,i)=>row[i])) alert("BINGO! Diagonal!");
-  if(r+c===GRID_SIZE-1 && marked.every((row,i)=>row[GRID_SIZE-1-i])) alert("BINGO! Diagonal!");
+/* ============================================
+   7. BINGO CHECKER
+   ============================================ */
+function checkBingo(r, c){
+  if(marked[r].every(v => v)) alert("BINGO! Row!");
+  if(marked.every(row => row[c])) alert("BINGO! Column!");
+  if(r === c && marked.every((row,i)=>row[i])) alert("BINGO! Diagonal!");
+  if(r + c === GRID_SIZE - 1 && marked.every((row,i)=>row[GRID_SIZE - 1 - i])) alert("BINGO! Diagonal!");
 }
 
+/* ============================================================
+   INIT
+   ============================================================ */
 document.getElementById("startBtn").addEventListener("click", startGame);
 
-// 🔥 Load words/clues immediately when page opens
+// Preload words/clues silently
 preloadClues();
+
 </script>
 
 </body>
